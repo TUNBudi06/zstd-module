@@ -1,11 +1,10 @@
-# Pick at launch:
-#   quicktzs dev run main.tun              -> unpack (import)
-#   quicktzs dev run main.tun --reimport   -> repack (reimport)
+# Default: interactive menu (choose import / reimport).
+# Shortcut: --reimport skips the menu and repacks directly.
 START {
-    arg @reimport = "--reimport" flag : "Rebuild the archive from extracted files (default: unpack)";
+    arg @reimport = "--reimport" flag : "Skip the menu and repack directly";
 }
 LOAD { load "lib/zstd"; }
 MAIN {
     if @reimport == 1 { run "scripts/repack"; }
-    else { run "scripts/unpack"; }
+    else { run "scripts/menu"; }
 }

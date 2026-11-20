@@ -46,7 +46,7 @@ fn pad8(@i) -> (@s) {
     return substr @t (len(@t) - 8) 8;
 }
 
-start {
+fn unpack() {
     endian little;
     let @files = glob "/data/ue" "*.pak";
     if len(@files) == 0 { exit 1 "no *.pak archive found in the NEED read directory"; }
@@ -99,3 +99,5 @@ start {
     }
     print f"unpacked {@i} files, skipped {@skipped} encrypted frames";
 }
+
+start { unpack(); }

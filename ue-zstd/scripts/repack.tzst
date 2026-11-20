@@ -21,7 +21,7 @@ fn pad8(@i) -> (@s) {
     return substr @t (len(@t) - 8) 8;
 }
 
-start {
+fn repack() {
     let @root = "/data/ue/out";
     let @dst = "/data/ue/repack/repacked.pak";
     let @i = 0;
@@ -49,3 +49,5 @@ start {
     if @i == 0 { exit 1 "no extracted files found"; }
     print f"repacked {@i} files";
 }
+
+start { repack(); }

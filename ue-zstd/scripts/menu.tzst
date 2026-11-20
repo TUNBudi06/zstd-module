@@ -1,0 +1,24 @@
+# Interactive entry menu: choose import (unpack) or reimport (repack).
+# NEEDs do NOT propagate from imported scripts, so declare the union here.
+# Keep these in sync with unpack.tzst / repack.tzst. (read "/data/ue" covers
+# the nested "/data/ue/out" that repack reads.)
+NEED read  "/data/ue";
+NEED write "/data/ue/out";
+NEED write "/data/ue/repack";
+NEED time  30m;
+
+import "unpack" as u;
+import "repack" as r;
+import "std/term" as term;
+
+start {
+    print term.bold("QuickTZS zstd module");
+    let @one = term.green("1");
+    let @two = term.yellow("2");
+    print f"  {@one}) import    (unpack archive -> files)";
+    print f"  {@two}) reimport  (files -> archive)";
+    input @c = "choose [1/2]: ";
+    if @c == "1" { u.unpack(); }
+    elif @c == "2" { r.repack(); }
+    else { print term.red("invalid choice"); exit 2 "pick 1 or 2"; }
+}
