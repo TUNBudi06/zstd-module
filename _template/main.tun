@@ -1,0 +1,4 @@
+LOAD { load "lib/codec"; }
+# Default action is unpack. To rebuild a container from extracted files,
+# change the line below to: run "scripts/repack";
+MAIN { run "scripts/unpack"; }

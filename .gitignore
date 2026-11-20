@@ -1,0 +1,3 @@
+# Built native libs are platform-specific; rebuild from src/*.c (see each README).
+**/lib/*.so
+*.o

@@ -1,0 +1,4 @@
+LOAD { load "lib/zstd"; }
+# Default action is unpack. To rebuild an archive from extracted files,
+# change the line below to: run "scripts/repack";
+MAIN { run "scripts/unpack"; }

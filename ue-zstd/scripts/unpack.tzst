@@ -1,0 +1,101 @@
+# Unpack an Unreal Engine archive made of back-to-back zstd frames (no TOC).
+# Port of the QuickBMS script; see the module notes for deviations.
+#
+# EDIT THESE TWO PATHS (they must be string literals, they go in the signed
+# permission table), and keep the two literals below in sync:
+#   input  : directory holding the *.pak archive      (NEED read)
+#   output : directory that receives file_<bucket>/<i:08d><ext> (NEED write)
+NEED read  "/data/ue";
+NEED write "/data/ue/out";
+NEED time  30m;
+
+import "lib/zstd" as zstd;
+import "std/hex" as hex;
+
+# Window read per frame; a compressed 64 KiB chunk always fits.
+# Returns (decompressed buf, compressed length) of the frame at @co.
+fn decode(@arch, @asize, @co) -> (@data, @clen) {
+    let @win = @asize - @co;
+    if @win > 131072 { @win = 131072; }
+    let @comp = read @arch @co @win;
+    let @clen = zstd.frame_clen(@comp);
+    if @clen < 0 { print f"bad or truncated zstd frame at offset @co"; exit 2 "bad zstd frame"; }
+    return (zstd.decompress(@comp), @clen);
+}
+
+# Find the next NON-encrypted frame at or after @pos. Frames whose byte after
+# the magic is 0x63 are skipped (counted). Returns (offset or -1, skipped).
+fn next_frame(@arch, @asize, @magic, @pos) -> (@co, @skipped) {
+    endian little;
+    let @skipped = 0;
+    while 1 {
+        let @co = findloc @arch @magic @pos;
+        if @co == -1 or @co + 4 >= @asize { return (0 - 1, @skipped); }
+        if (read_u8 @arch @co + 4) == 0x63 {
+            @skipped = @skipped + 1;
+            @pos = @co + 5;
+        } else {
+            return (@co, @skipped);
+        }
+    }
+    return (0 - 1, @skipped);
+}
+
+fn pad8(@i) -> (@s) {
+    let @t = "00000000" + str(@i);
+    return substr @t (len(@t) - 8) 8;
+}
+
+start {
+    endian little;
+    let @files = glob "/data/ue" "*.pak";
+    if len(@files) == 0 { exit 1 "no *.pak archive found in the NEED read directory"; }
+    let @arch = select @files "Pick the archive:";
+    let @asize = fsize @arch;
+    let @magic = hex.decode("28b52ffd");
+    let @out = "/data/ue/out";
+
+    let @pos = 0;
+    let @i = 0;
+    let @skipped = 0;
+    let @eof = 0;
+    while @eof == 0 {
+        # Pass 1: collect this file's frame offsets and what the extension needs.
+        let @offs = [];
+        let @m = 0;
+        let @tail = 0;
+        let @more = 1;
+        while @more == 1 {
+            let (@co, @sk) = next_frame(@arch, @asize, @magic, @pos);
+            @skipped = @skipped + @sk;
+            if @co == -1 { @eof = 1; break; }
+            let (@data, @clen) = decode(@arch, @asize, @co);
+            push @offs <- @co;
+            let @n = len(@data);
+            if len(@offs) == 1 and @n >= 4 { @m = read_u32 @data 0; }
+            @pos = @co + @clen;
+            if @n < 65536 {
+                @more = 0;
+                # .bms reads 3 bytes at (end - 4), not the last 3
+                if @n >= 4 { @tail = (read_u8 @data @n - 4) | ((read_u8 @data @n - 3) shl 8) | ((read_u8 @data @n - 2) shl 16); }
+            }
+        }
+        if len(@offs) > 0 {
+            let @ext = "";
+            if @m == 0x9E2A83C1 { @ext = ".uasset"; }
+            elif @m == 0x61754C1B { @ext = ".lua"; }
+            elif @m == 0x090A0D7B or @m == 0x007BFEFF or @m == 0x200A0D7B { @ext = ".dat"; }
+            elif @m == 0x27DA0020 or @m == 1 or @m == 0x7BBFBBEF { @ext = ".res"; }
+            elif @tail == 0x2A83C1 { @ext = ".uexp"; }
+            else { @ext = ".ubulk"; }
+            let @path = f"{@out}/file_{(@i / 1000) * 1000}/{pad8(@i)}{@ext}";
+            # Pass 2: stream each chunk to its offset (O(window) memory).
+            for @k in 0..len(@offs) {
+                let (@d, @c) = decode(@arch, @asize, @offs[@k]);
+                write @d -> @path @k * 65536;
+            }
+            @i = @i + 1;
+        }
+    }
+    print f"unpacked {@i} files, skipped {@skipped} encrypted frames";
+}

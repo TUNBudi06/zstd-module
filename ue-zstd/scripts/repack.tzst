@@ -1,0 +1,51 @@
+# Rebuild an archive from the files unpack produced (inverse of unpack).
+#
+# EDIT THESE TWO PATHS (string literals; keep the literals below in sync):
+#   input  : the extracted root holding file_<bucket>/<i:08d>.<ext>  (NEED read)
+#   output : directory that receives repacked.pak                    (NEED write)
+#
+# LIMITATIONS: encrypted (0x63) frames were skipped by unpack and are NOT
+# reproduced; the format has no TOC/absolute offsets, so none is written.
+# Every file is cut into 64 KiB pieces, each its own zstd frame (level 19).
+# A file always ends with a piece < 64 KiB, which is emitted even if it is
+# empty (exact multiples of 64 KiB get a 0-byte terminator frame), because
+# unpack ends a file on the first frame whose size is < 64 KiB.
+NEED read  "/data/ue/out";
+NEED write "/data/ue/repack";
+NEED time  30m;
+
+import "lib/zstd" as zstd;
+
+fn pad8(@i) -> (@s) {
+    let @t = "00000000" + str(@i);
+    return substr @t (len(@t) - 8) 8;
+}
+
+start {
+    let @root = "/data/ue/out";
+    let @dst = "/data/ue/repack/repacked.pak";
+    let @i = 0;
+    let @go = 1;
+    # Index order == unpack order; files are contiguous from 0.
+    while @go == 1 {
+        let @dir = f"{@root}/file_{(@i / 1000) * 1000}";
+        let @hit = glob @dir f"{pad8(@i)}.*";
+        if len(@hit) == 0 {
+            @go = 0;
+        } else {
+            let @f = @hit[0];
+            let @size = fsize @f;
+            let @off = 0;
+            let @last = 0;
+            while @last == 0 {
+                let @n = @size - @off;
+                if @n >= 65536 { @n = 65536; } else { @last = 1; }
+                append (zstd.compress(read @f @off @n)) -> @dst;
+                @off = @off + @n;
+            }
+            @i = @i + 1;
+        }
+    }
+    if @i == 0 { exit 1 "no extracted files found"; }
+    print f"repacked {@i} files";
+}

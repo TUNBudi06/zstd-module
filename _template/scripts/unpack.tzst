@@ -1,0 +1,70 @@
+# Unpack skeleton. Fill in the TODOs for your container format.
+# See docs/03-unpacking-binaries.md and docs/07-porting-bms-for-ai.md.
+#
+# NEED paths must be absolute string literals (they go in the signed manifest).
+# Keep every copy of a path in sync (the NEED, the glob root, the @out variable).
+NEED read  "/data/in";       # TODO: directory holding the container
+NEED write "/data/out";      # TODO: directory that receives extracted files
+NEED time  30m;
+
+import "lib/codec" as codec;
+import "std/hex" as hex;
+
+# Decode the frame at @co in @arch; returns (decompressed buf, compressed length).
+# Reads only a bounded window so memory stays O(window), not O(file).
+fn decode(@arch, @asize, @co) -> (@data, @clen) {
+    let @win = @asize - @co;
+    if @win > 131072 { @win = 131072; }   # TODO: >= max single-frame compressed size
+    let @comp = read @arch @co @win;
+    let @clen = codec.frame_clen(@comp);
+    if @clen < 0 { print f"bad frame at @co"; exit 2 "bad frame"; }
+    return (codec.decompress(@comp), @clen);
+}
+
+# Zero-pad an int to 8 digits (no printf in the language).
+fn pad8(@i) -> (@s) {
+    let @t = "00000000" + str(@i);
+    return substr @t (len(@t) - 8) 8;
+}
+
+start {
+    endian little;
+    let @files = glob "/data/in" "*";     # TODO: narrow the pattern (e.g. "*.pak")
+    if len(@files) == 0 { exit 1 "no container found"; }
+    let @arch = select @files "Pick the container:";
+    let @asize = fsize @arch;
+    let @magic = hex.decode("00000000");  # TODO: the frame/file magic bytes
+    let @out = "/data/out";
+
+    let @pos = 0;
+    let @i = 0;
+    let @eof = 0;
+    while @eof == 0 {
+        # --- Assemble one output file from its chunks, in ONE buffer. ---
+        let @buf = hex.decode("");   # empty buf
+        let @first = -1;             # first chunk's leading u32 (for the extension)
+        let @have = 0;
+        let @more = 1;
+        while @more == 1 {
+            let @co = findloc @arch @magic @pos;
+            if @co == -1 { @eof = 1; @more = 0; }
+            else {
+                # TODO: skip/handle special frames here (e.g. encrypted markers).
+                let (@data, @clen) = decode(@arch, @asize, @co);
+                @pos = @co + @clen;
+                if @have == 0 and len(@data) >= 4 { @first = read_u32 @data 0; @have = 1; }
+                @buf = @buf + @data;
+                # TODO: your end-of-file rule. Example: a chunk smaller than the
+                # fixed chunk size is the last one.
+                if len(@data) < 65536 { @more = 0; }
+            }
+        }
+        if @have == 1 {
+            let @ext = ".bin";               # TODO: pick by @first (and/or a tail check)
+            let @path = f"{@out}/file_{(@i / 1000) * 1000}/{pad8(@i)}{@ext}";
+            write @buf -> @path 0;           # single write: O(filesize) disk, not O(K^2)
+            @i = @i + 1;
+        }
+    }
+    print f"unpacked {@i} files";
+}

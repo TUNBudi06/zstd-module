@@ -1,0 +1,47 @@
+# Repack skeleton: rebuild the container from extracted files (inverse of unpack).
+# Only for scan-located, no-TOC formats. See docs/07-porting-bms-for-ai.md section 5.
+#
+# LIMITATIONS to keep: special frames unpack skipped (e.g. encrypted) are NOT
+# reproduced; no TOC/absolute offsets are written. Your chunk-boundary rule MUST
+# match unpack exactly, or re-unpacking merges or splits files.
+NEED read  "/data/out";          # TODO: the extracted root (unpack's output)
+NEED write "/data/repack";       # TODO: directory that receives the rebuilt container
+NEED time  30m;
+
+import "lib/codec" as codec;
+
+fn pad8(@i) -> (@s) {
+    let @t = "00000000" + str(@i);
+    return substr @t (len(@t) - 8) 8;
+}
+
+start {
+    let @root = "/data/out";
+    let @dst = "/data/repack/repacked.bin";   # TODO: name/extension
+    let @i = 0;
+    let @started = 0;                          # first frame truncates @dst, rest append
+    let @go = 1;
+    while @go == 1 {
+        # glob is not recursive; walk one index at a time (contiguous indexes).
+        let @dir = f"{@root}/file_{(@i / 1000) * 1000}";
+        let @hit = glob @dir f"{pad8(@i)}.*";
+        if len(@hit) == 0 { @go = 0; }
+        else {
+            let @f = @hit[0];
+            let @size = fsize @f;
+            let @off = 0;
+            let @last = 0;
+            while @last == 0 {
+                let @n = @size - @off;
+                if @n >= 65536 { @n = 65536; } else { @last = 1; }   # TODO: chunk size
+                let @frame = codec.compress(read @f @off @n);
+                if @started == 0 { write @frame -> @dst 0; @started = 1; }
+                else { append @frame -> @dst; }
+                @off = @off + @n;
+            }
+            @i = @i + 1;
+        }
+    }
+    if @i == 0 { exit 1 "no extracted files found"; }
+    print f"repacked {@i} files";
+}
