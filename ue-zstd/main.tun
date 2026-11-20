@@ -1,4 +1,11 @@
+# Pick at launch:
+#   quicktzs dev run main.tun              -> unpack (import)
+#   quicktzs dev run main.tun --reimport   -> repack (reimport)
+START {
+    arg @reimport = "--reimport" flag : "Rebuild the archive from extracted files (default: unpack)";
+}
 LOAD { load "lib/zstd"; }
-# Default action is unpack. To rebuild an archive from extracted files,
-# change the line below to: run "scripts/repack";
-MAIN { run "scripts/unpack"; }
+MAIN {
+    if @reimport == 1 { run "scripts/repack"; }
+    else { run "scripts/unpack"; }
+}
